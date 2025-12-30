@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH 指令 </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <style>
+        /* --- 全局深度空间主题 --- */
+        body {
+            font-family: 'PingFang SC', 'Microsoft YaHei', 'JetBrains Mono', 'Segoe UI', monospace;
+            background-color: #050505;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+            color: #c0c0c0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease-in;
+        }
+
+        body.loaded {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* --- 玻璃拟态面板 --- */
+        .glass-panel {
+            background: rgba(20, 20, 30, 0.65);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .glass-panel:hover {
+            border-color: rgba(167, 139, 250, 0.4);
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* --- 霓虹输入框 --- */
+        .neon-input {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            transition: all 0.3s ease;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        .neon-input:focus {
+            outline: none;
+            border-color: #d946ef;
+            box-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+            background: rgba(0, 0, 0, 0.8);
+        }
+        .neon-input::placeholder {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* --- 交互式复选框卡片 --- */
+        .check-card {
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            user-select: none;
+            transform: translateZ(0);
+            backface-visibility: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        .check-card:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        .check-card input:checked + div {
+            color: #d946ef;
+            text-shadow: 0 0 8px rgba(217, 70, 239, 0.6);
+        }
+        .check-card input:checked ~ .indicator {
+            background-color: #d946ef;
+            box-shadow: 0 0 10px #d946ef;
+        }
+        
+        /* 提示文字显示问题 - 重新设计 */
+        .check-card {
+            position: relative;
+            padding-bottom: 18px !important; /* 为提示文字预留空间 */
+            overflow: visible !important; /* 允许溢出显示 */
+        }
+        
+        .check-card p {
+            position: absolute;
+            bottom: 2px !important;
+            left: 12px !important;
+            right: 12px !important;
+            font-size: 9px !important;
+            white-space: nowrap;
+            overflow: visible;
+            text-overflow: ellipsis;
+            color: #6b7280 !important;
+            margin: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* --- 滚动条美化 --- */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6d28d9; }
+
+        /* --- 动画 --- */
+        .cursor-blink { animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .modal-enter { animation: fadeScale 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeScale {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* --- 移动端优化 --- */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+            
+            .glass-panel {
+                padding: 16px !important;
+                border-radius: 16px !important;
+            }
+            
+            /* 隧道输入框移动端优化 */
+            #tunD, #tunL, #tunR {
+                width: 100% !important;
+                text-align: left !important;
+            }
+            
+            /* 高级参数网格移动端优化 */
+            .grid-cols-2.md\:grid-cols-4 {
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 8px !important;
+            }
+            
+            .check-card {
+                padding: 12px !important;
+                font-size: 12px !important;
+            }
+            
+            .check-card p {
+                font-size: 9px !important;
+                bottom: 2px !important;
+                white-space: nowrap;
+                overflow: visible;
+            }
+            
+            /* 按钮组移动端优化 */
+            .grid-cols-2.gap-3 {
+                gap: 8px !important;
+            }
+            
+            button {
+                padding: 10px !important;
+                font-size: 13px !important;
+                transform: translateZ(0);
+                backface-visibility: hidden;
+                -webkit-font-smoothing: antialiased;
+            }
+            
+            /* 隧道管理面板移动端优化 */
+            #tunnelManagement .bg-black\/40 {
+                padding: 12px !important;
+                font-size: 11px !important;
+            }
+            
+            /* 配置解析区域移动端优化 */
+            #analysis {
+                height: 150px !important;
+                font-size: 11px !important;
+            }
+            
+            /* 标题字体移动端优化 */
+            h1 {
+                font-size: 32px !important;
+            }
+            
+            h2 {
+                font-size: 18px !important;
+            }
+            
+            /* 输入框移动端优化 */
+            .neon-input {
+                padding: 12px !important;
+                font-size: 14px !important;
+            }
+            
+            /* 标签文本移动端优化 */
+            label.text-xs {
+                font-size: 10px !important;
+            }
+            
+            /* 终端预览区域移动端优化 */
+            #cmdDisplay {
+                font-size: 13px !important;
+            }
+            
+            /* 网格布局移动端优化 */
+            .grid-cols-1.md\:grid-cols-12 {
+                gap: 12px !important;
+            }
+            
+            /* 模态框移动端优化 */
+            #termModal .bg-\[\#1a1b26\] {
+                height: 80vh !important;
+                max-width: 95vw !important;
+            }
+            
+            /* 隧道区域强制垂直布局 */
+            .flex-col.md\:flex-row {
+                flex-direction: column !important;
+            }
+            
+            /* 确保输入框不会溢出 */
+            .neon-input {
+                min-width: 0;
+            }
+            
+            /* 确保容器不会过宽 */
+            .max-w-7xl {
+                max-width: 100% !important;
+                width: 100% !important;
+            }
+        }
+
+        /* --- 平板端优化 (768px - 1024px) --- */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .grid-cols-1.md\:grid-cols-12 {
+                gap: 12px !important;
+            }
+            
+            .glass-panel {
+                padding: 20px !important;
+            }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6 lg:p-10 flex flex-col items-center selection:bg-purple-500 selection:text-white" oncontextmenu="return false">
+
+    <header class="w-full max-w-7xl mb-10 flex flex-col md:flex-row justify-between items-center border-b border-gray-800 pb-6 animate-fade-in-down">
+        <div>
+            <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 drop-shadow-[0_0_15px_rgba(168,85,247,0.4)] tracking-tight">
+                SSH 指令
+            </h1>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full max-w-7xl">
+        
+        <div class="lg:col-span-8 space-y-6">
+            
+            <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-cyan-500 opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                <h2 class="text-xl font-bold text-cyan-400 mb-5 flex items-center">
+                    <i class="fas fa-server mr-3 text-lg"></i>目标节点配置
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-3">
+                        <label class="text-xs text-gray-500 uppercase font-bold ml-1 mb-1 block">用户</label>
+                        <input type="text" id="user" placeholder="root" class="neon-input w-full p-3 rounded-lg font-mono text-sm" oninput="debounceUpdate()">
+                    </div>
+                    <div class="md:col-span-6">
+                        <label class="text-xs text-gray-500 uppercase font-bold ml-1 mb-1 block">主机 / IP</label>
+                        <input type="text" id="host" placeholder="192.168.1.100" class="neon-input w-full p-3 rounded-lg font-mono text-sm" oninput="debounceUpdate()">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="text-xs text-gray-500 uppercase font-bold ml-1 mb-1 block">端口 (-p)</label>
+                        <input type="number" id="port" placeholder="22" class="neon-input w-full p-3 rounded-lg font-mono text-sm" oninput="debounceUpdate()">
+                    </div>
+                    <div class="md:col-span-12">
+                        <label class="text-xs text-gray-500 uppercase font-bold ml-1 mb-1 block">密钥文件 (-i)</label>
+                        <div class="flex gap-2 relative">
+                            <span class="absolute left-3 top-3 text-gray-500"><i class="fas fa-fingerprint"></i></span>
+                            <input type="text" id="key" placeholder="~/.ssh/id_rsa" class="neon-input w-full p-3 pl-10 rounded-lg font-mono text-sm" oninput="debounceUpdate()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-purple-500 opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-purple-600 blur-[90px] opacity-20 pointer-events-none"></div>
+                
+                <h2 class="text-xl font-bold text-purple-400 mb-5 flex items-center relative z-10">
+                    <i class="fas fa-random mr-3 text-lg"></i>隧道与映射
+                </h2>
+                
+                <div class="space-y-4 relative z-10">
+                    <div class="flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4 p-4 rounded-xl bg-black/20 border border-gray-800 hover:border-purple-500/50 transition duration-300">
+                        <div class="flex items-center gap-3 w-full md:w-auto">
+                            <div class="w-12 h-12 rounded-full bg-purple-900/30 flex items-center justify-center text-purple-400 font-bold text-lg shadow-[0_0_10px_rgba(168,85,247,0.2)] shrink-0">D</div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-bold text-gray-200">动态代理 (SOCKS5)</h3>
+                                <p class="text-xs text-gray-500 mt-1">在本机开启 SOCKS5 代理端口，全网流量均可借道服务器转发。</p>
+                            </div>
+                        </div>
+                        <input type="text" id="tunD" placeholder="1080" class="neon-input w-full md:w-36 p-2 rounded text-center text-sm font-mono border-purple-500/20 focus:border-purple-500 mt-2 md:mt-0" oninput="debounceUpdate()">
+                    </div>
+
+                    <div class="flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4 p-4 rounded-xl bg-black/20 border border-gray-800 hover:border-blue-500/50 transition duration-300">
+                        <div class="flex items-center gap-3 w-full md:w-auto">
+                            <div class="w-12 h-12 rounded-full bg-blue-900/30 flex items-center justify-center text-blue-400 font-bold text-lg shadow-[0_0_10px_rgba(59,130,246,0.2)] shrink-0">L</div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-bold text-gray-200">本地映射</h3>
+                                <p class="text-xs text-gray-500 mt-1">将远程内部服务（如数据库）映射到本地端口访问。</p>
+                            </div>
+                        </div>
+                        <input type="text" id="tunL" placeholder="3306:localhost:3306" class="neon-input w-full md:w-64 p-2 rounded text-sm font-mono border-blue-500/20 focus:border-blue-500 mt-2 md:mt-0" oninput="debounceUpdate()">
+                    </div>
+
+                    <div class="flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-4 p-4 rounded-xl bg-black/20 border border-gray-800 hover:border-pink-500/50 transition duration-300">
+                        <div class="flex items-center gap-3 w-full md:w-auto">
+                            <div class="w-12 h-12 rounded-full bg-pink-900/30 flex items-center justify-center text-pink-400 font-bold text-lg shadow-[0_0_10px_rgba(236,72,153,0.2)] shrink-0">R</div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-bold text-pink-300">内网穿透</h3>
+                                <p class="text-xs text-gray-500 mt-1">将本机服务暴露给远程服务器，实现反向访问。</p>
+                            </div>
+                        </div>
+                        <input type="text" id="tunR" placeholder="8080:localhost:80" class="neon-input w-full md:w-64 p-2 rounded text-sm font-mono border-pink-500/20 focus:border-pink-500 mt-2 md:mt-0" oninput="debounceUpdate()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-green-500 opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                <h2 class="text-xl font-bold text-green-400 mb-5 flex items-center">
+                    <i class="fas fa-cogs mr-3 text-lg"></i>高级参数
+                </h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagC" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-C 压缩传输</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">节省带宽</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagN" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-N 仅连接</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">不执行命令</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagf" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-f 后台静默</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">挂机模式</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagv" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-v 调试日志</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">故障排查</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagA" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-A 密钥转发</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">多级跳转验证</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagX" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-X 图形转发</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">运行远程GUI</p>
+                    </label>
+
+                    <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagt" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-t 伪终端</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">强制TTY</p>
+                    </label>
+
+                     <label class="check-card flex items-center p-3 rounded-lg bg-gray-900/40 relative overflow-hidden group">
+                        <input type="checkbox" id="flagq" class="hidden" onchange="update()">
+                        <div class="font-bold text-gray-400 text-sm z-10 transition-colors">-q 安静模式</div>
+                        <div class="indicator w-1.5 h-1.5 rounded-full absolute top-2 right-2 transition-all bg-gray-700"></div>
+                        <p class="absolute bottom-1 left-3 text-[10px] text-gray-600">无警告</p>
+                    </label>
+                </div>
+
+                <div class="mt-4 pt-4 border-t border-gray-800/50">
+                     <label class="text-xs text-gray-500 uppercase flex items-center gap-2 font-bold">
+                        <i class="fas fa-share-alt"></i> 跳板机 (-J) 
+                        <span class="text-[10px] text-gray-600 font-normal normal-case ml-auto">(格式: 中间人用户@中间人IP:端口)</span>
+                    </label>
+                    <input type="text" id="jumpHost" placeholder="relay_user@10.0.0.1" class="neon-input w-full p-2 mt-2 rounded text-sm font-mono border-gray-700 focus:border-green-500" oninput="debounceUpdate()">
+                </div>
+            </div>
+
+        </div>
+
+        <div class="lg:col-span-4 space-y-6">
+            
+            <div class="sticky top-6 space-y-4">
+                
+                <div class="glass-panel p-0 rounded-xl overflow-hidden shadow-2xl border border-gray-700 flex flex-col">
+                    <div class="bg-gray-900/90 px-4 py-3 flex items-center justify-between border-b border-gray-800 backdrop-blur-sm">
+                        <div class="flex gap-2">
+                            <div class="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 cursor-pointer shadow-red-500/50"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 cursor-pointer"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-500 cursor-pointer"></div>
+                        </div>
+                        <span class="text-xs text-gray-500 font-mono">bash — 预览</span>
+                    </div>
+                    <div class="bg-[#0c0c0c] p-5 min-h-[140px] font-mono text-sm break-all relative group flex flex-col justify-center">
+                        <div class="text-gray-600 text-[10px] mb-2 uppercase tracking-wider">生成的命令:</div>
+                        <div class="leading-relaxed">
+                            <span class="text-green-500 font-bold">➜</span> 
+                            <span class="text-cyan-500 font-bold">~</span> 
+                            <span id="cmdDisplay" class="text-gray-200 select-all transition-colors duration-200">ssh</span>
+                            <span class="cursor-blink bg-gray-500 w-2 h-4 inline-block align-middle ml-1"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="copyCmd()" class="col-span-2 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-bold border border-gray-600 transition flex items-center justify-center gap-2 shadow-lg active:scale-95">
+                        <i class="fas fa-clipboard"></i> 复制完整命令
+                    </button>
+                    <button onclick="openLocalApp()" class="py-3 bg-blue-900/30 hover:bg-blue-800/50 text-blue-200 rounded-lg font-bold border border-blue-500/20 transition text-sm backdrop-blur-sm active:scale-95">
+                        <i class="fas fa-external-link-square-alt mr-1"></i> 唤起终端
+                    </button>
+                    <button onclick="openWebTerm()" class="py-3 bg-gradient-to-r from-purple-700 to-pink-700 hover:from-purple-600 hover:to-pink-600 text-white rounded-lg font-bold shadow-[0_0_20px_rgba(217,70,239,0.3)] transition text-sm active:scale-95 border border-purple-500/30">
+                        <i class="fas fa-terminal mr-1"></i> 模拟运行
+                    </button>
+                </div>
+
+                <div class="glass-panel p-5 rounded-xl border-l-4 border-cyan-500">
+                    <h3 class="text-cyan-400 font-bold mb-3 text-sm uppercase tracking-wide flex items-center">
+                        <i class="fas fa-info-circle mr-2"></i>配置解析
+                    </h3>
+                    <div id="analysis" class="text-xs text-gray-400 space-y-2 leading-relaxed h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                        <span class="opacity-50 italic">等待参数输入...</span>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-5 rounded-xl border-l-4 border-orange-500">
+                    <h3 class="text-orange-400 font-bold mb-3 text-sm uppercase tracking-wide flex items-center cursor-pointer" onclick="toggleTunnelManagement()">
+                        <i class="fas fa-tools mr-2"></i>后台隧道管理
+                        <i class="fas fa-chevron-down ml-auto text-xs transition-transform" id="tunnelToggleIcon"></i>
+                    </h3>
+                    <div id="tunnelManagement" class="hidden space-y-4">
+                        <div class="text-xs text-gray-400 leading-relaxed">
+                            <p class="mb-3 text-gray-300 font-bold">查找和关闭后台SSH隧道进程：</p>
+                            
+                            <div class="mb-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                    <span class="font-bold text-blue-400">Windows (PowerShell)</span>
+                                </div>
+                                <div class="bg-black/40 p-2 rounded font-mono text-[10px] mb-1">
+                                    <div class="text-gray-500 mb-1"># 查找进程：</div>
+                                    Get-CimInstance Win32_Process -Filter "Name = 'ssh.exe'" | Select-Object ProcessId, CommandLine
+                                </div>
+                                <div class="bg-black/40 p-2 rounded font-mono text-[10px]">
+                                    <div class="text-gray-500 mb-1"># 关闭进程：</div>
+                                    taskkill /F /PID <进程号>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                                    <span class="font-bold text-green-400">Linux / macOS</span>
+                                </div>
+                                <div class="bg-black/40 p-2 rounded font-mono text-[10px] mb-1">
+                                    <div class="text-gray-500 mb-1"># 查找进程：</div>
+                                    ps aux | grep "ssh.*-f.*-N"<br>
+                                    # 或者<br>
+                                    pgrep -f "ssh.*-f.*-N"
+                                </div>
+                                <div class="bg-black/40 p-2 rounded font-mono text-[10px]">
+                                    <div class="text-gray-500 mb-1"># 关闭进程：</div>
+                                    kill <PID>  # 正常关闭<br>
+                                    kill -9 <PID>  # 强制关闭
+                                </div>
+                            </div>
+
+                            <div class="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                                <div class="flex items-start gap-2">
+                                    <i class="fas fa-exclamation-triangle text-yellow-400 mt-0.5"></i>
+                                    <div class="text-[10px] leading-relaxed">
+                                        <div class="font-bold text-yellow-400 mb-1">重要提示：</div>
+                                        <div>• <b>必须在发起SSH的本地电脑关闭进程</b>，而不是服务器</div>
+                                        <div>• -L端口开在本地，-R端口开在服务器</div>
+                                        <div>• 在服务器杀sshd进程可能导致僵尸进程</div>
+                                        <div>• 强制关闭(-9/-F)可能需要重新连接验证</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 模拟终端模态框 -->
+    <div id="termModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#1a1b26] w-full max-w-5xl h-[600px] rounded-xl shadow-2xl border border-gray-700 flex flex-col modal-enter relative overflow-hidden ring-1 ring-white/10">
+            <div class="flex justify-between items-center px-4 py-3 border-b border-gray-700 bg-[#16161e]">
+                <div class="flex items-center gap-3">
+                    <div class="p-1 bg-purple-500/20 rounded">
+                        <i class="fas fa-terminal text-purple-400 text-sm"></i>
+                    </div>
+                    <span class="text-gray-300 text-sm font-mono font-bold">SSH Interactive Simulation</span>
+                    <span class="text-xs text-gray-600 border border-gray-700 px-2 py-0.5 rounded">Demo Mode</span>
+                </div>
+                <button onclick="closeWebTerm()" class="text-gray-500 hover:text-red-400 transition transform hover:rotate-90 duration-200">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="bg-yellow-900/20 text-yellow-500 text-xs px-4 py-2 border-b border-yellow-800/30 flex items-center justify-center gap-2">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>注意：此为网页前端模拟环境，无法建立真实的 TCP/SSH 连接。输入 <b>help</b> 查看彩蛋命令！</span>
+            </div>
+
+            <!-- 特效控制栏 -->
+            <div class="bg-[#16161e] px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="text-xs text-gray-500 font-mono">特效控制:</span>
+                    <span id="effectStatus" class="text-xs text-gray-600 font-mono">当前状态: 无特效</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-gray-600">快捷键: Ctrl+Shift+S</span>
+                </div>
+            </div>
+
+            <div id="terminal-container" class="flex-1 bg-[#1a1b26] p-1"></div>
+
+            <!-- 
+                旧的关闭按钮位置已被移除，改为全局固定位置 
+            -->
+        </div>
+    </div>
+
+    <!-- 全屏特效停止按钮 - 移到body最外层，固定在右上角，优化视觉 -->
+    <button id="fullscreenStopBtn" onclick="stopEffects()" class="hidden fixed top-4 right-4 z-[10000] px-3 py-1.5 bg-black/40 hover:bg-red-500/90 hover:text-white text-gray-400 backdrop-blur-md border border-white/10 rounded-full font-bold shadow-2xl transition-all duration-300 transform active:scale-95 text-xs flex items-center gap-2 opacity-40 hover:opacity-100 group">
+        <i class="fas fa-stop-circle text-sm group-hover:rotate-12 transition-transform"></i>
+        <span>退出特效</span>
+    </button>
+
+    <script>
+            // --- 核心逻辑部分 ---
+        
+        function update() {
+            // 1. 获取所有输入值
+            const inputs = {
+                user: document.getElementById('user').value.trim(),
+                host: document.getElementById('host').value.trim(),
+                port: document.getElementById('port').value.trim(),
+                key: document.getElementById('key').value.trim(),
+                tunD: document.getElementById('tunD').value.trim(),
+                tunL: document.getElementById('tunL').value.trim(),
+                tunR: document.getElementById('tunR').value.trim(),
+                jump: document.getElementById('jumpHost').value.trim(),
+                flags: {
+                    C: document.getElementById('flagC').checked,
+                    N: document.getElementById('flagN').checked,
+                    f: document.getElementById('flagf').checked,
+                    v: document.getElementById('flagv').checked,
+                    A: document.getElementById('flagA').checked,
+                    X: document.getElementById('flagX').checked,
+                    t: document.getElementById('flagt').checked,
+                    q: document.getElementById('flagq').checked,
+                }
+            };
+
+            let cmd = ['ssh'];
+            let tips = []; 
+
+            // 2. 构建命令参数
+            if (inputs.port) cmd.push(`-p ${inputs.port}`);
+            
+            if (inputs.key) {
+                cmd.push(`-i ${inputs.key}`);
+                tips.push("🔑 <b class='text-gray-300'>身份验证</b>：指定了私钥文件，比密码登录更安全。");
+            }
+            
+            if (inputs.jump) {
+                cmd.push(`-J ${inputs.jump}`);
+                tips.push("⚡ <b class='text-yellow-400'>跳板中继</b>：配置了中间堡垒机跳转，将穿透防火墙限制。");
+            }
+
+            // Tunnels
+            if (inputs.tunD) {
+                cmd.push(`-D ${inputs.tunD}`);
+                tips.push(`🌐 <b class='text-purple-400'>动态代理</b>：本机 <b>${inputs.tunD}</b> 端口变为 SOCKS5 代理。请在浏览器或应用中设置此代理。`);
+            }
+            if (inputs.tunL) {
+                cmd.push(`-L ${inputs.tunL}`);
+                tips.push(`🔗 <b class='text-blue-400'>本地映射</b>：将远程服务拉取到本地。访问本地端口即等于访问远程内网。`);
+            }
+            if (inputs.tunR) {
+                cmd.push(`-R ${inputs.tunR}`);
+                tips.push(`📡 <b class='text-pink-400'>内网穿透</b>：将本机服务反向暴露给远程服务器访问。`);
+            }
+
+            // 处理标志并添加对应的提示（避免重复）
+            if (inputs.flags.C) {
+                cmd.push('-C');
+                tips.push("🗜️ <b class='text-gray-300'>压缩传输</b>：启用压缩，节省带宽。");
+            }
+            if (inputs.flags.q) {
+                cmd.push('-q');
+                tips.push("🔇 <b class='text-gray-300'>安静模式</b>：抑制警告和错误信息。");
+            }
+            if (inputs.flags.t) {
+                cmd.push('-t');
+                tips.push("🖥️ <b class='text-gray-300'>强制TTY</b>：强制分配伪终端。");
+            }
+            if (inputs.flags.v) {
+                cmd.push('-v');
+                tips.push("🐞 <b class='text-blue-400'>诊断模式</b>：开启详细日志，用于连接失败时排查原因。");
+            }
+            if (inputs.flags.X) {
+                cmd.push('-X');
+                tips.push("🖼️ <b class='text-pink-400'>X11 转发</b>：准备将远程 Linux GUI 窗口投射到本地屏幕。");
+            }
+            if (inputs.flags.A) {
+                cmd.push('-A');
+                tips.push("🛡️ <b class='text-green-400'>Agent 转发</b>：允许远程服务器使用您本地的 SSH 密钥进行下一跳验证。");
+            }
+            if (inputs.flags.f) {
+                cmd.push('-f');
+                if (inputs.flags.N) {
+                    tips.push("👻 <b class='text-gray-400'>幽灵模式</b>：后台静默运行且不执行命令。这是建立长期隧道的最佳实践。");
+                } else {
+                    tips.push("💤 <b class='text-gray-300'>后台运行</b>：SSH 连接后转入后台运行。");
+                }
+            }
+            if (inputs.flags.N && !inputs.flags.f) {
+                cmd.push('-N');
+                tips.push("🛑 <b class='text-gray-300'>仅连接</b>：建立 SSH 连接握手但不启动 Shell，通常配合端口转发使用。");
+            }
+
+            // 目标
+            let target = inputs.host || "[Host_IP]";
+            if (inputs.user) target = `${inputs.user}@${target}`;
+            cmd.push(target);
+
+            // 3. 渲染
+            document.getElementById('cmdDisplay').textContent = cmd.join(' ');
+            
+            const analysisEl = document.getElementById('analysis');
+            if (tips.length === 0) {
+                analysisEl.innerHTML = inputs.host ? "✅ 标准 SSH Shell 会话模式。" : "<span class='opacity-50 italic'>等待参数输入以生成分析...</span>";
+            } else {
+                analysisEl.innerHTML = tips.map(t => `<p class="mb-3 pb-2 border-b border-gray-700/30 last:border-0">${t}</p>`).join('');
+            }
+        }
+
+        // 复制功能
+        function copyCmd() {
+            const text = document.getElementById('cmdDisplay').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('button[onclick="copyCmd()"]');
+                const originContent = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check"></i> 复制成功';
+                btn.classList.add('bg-green-700', 'border-green-500', 'text-white');
+                btn.classList.remove('bg-gray-800');
+                setTimeout(() => {
+                    btn.innerHTML = originContent;
+                    btn.classList.remove('bg-green-700', 'border-green-500');
+                    btn.classList.add('bg-gray-800');
+                }, 2000);
+            });
+        }
+
+        // 唤起本地终端 - 提供多种方案
+        function openLocalApp() {
+            const user = document.getElementById('user').value;
+            const host = document.getElementById('host').value;
+            const port = document.getElementById('port').value || '22';
+            
+            if(!host) {
+                // 简单的提示动画
+                const hostInput = document.getElementById('host');
+                hostInput.classList.add('border-red-500', 'shadow-[0_0_10px_red]');
+                setTimeout(() => hostInput.classList.remove('border-red-500', 'shadow-[0_0_10px_red]'), 500);
+                
+                // 显示错误提示
+                alert('❌ 请先输入主机/IP地址');
+                return;
+            }
+
+            // 构建SSH命令
+            let sshCmd = 'ssh';
+            if (port && port !== '22') sshCmd += ` -p ${port}`;
+            if (user) sshCmd += ` ${user}@${host}`;
+            else sshCmd += ` ${host}`;
+
+            // 检测操作系统
+            const platform = navigator.platform.toLowerCase();
+            const isWindows = platform.includes('win');
+            const isMac = platform.includes('mac');
+            const isLinux = platform.includes('linux');
+
+            // 方案1: 尝试使用协议唤起（可能被浏览器阻止）
+            let protocolSuccess = false;
+            
+            if (isWindows) {
+                // Windows: 尝试PowerShell协议
+                try {
+                    const psCmd = `powershell -NoExit -Command "${sshCmd}"`;
+                    window.location.href = `powershell:${encodeURIComponent(psCmd)}`;
+                    protocolSuccess = true;
+                } catch (e) {
+                    protocolSuccess = false;
+                }
+            } else if (isMac || isLinux) {
+                // macOS/Linux: 尝试ssh协议
+                try {
+                    const target = user ? `${user}@${host}` : host;
+                    const sshUrl = `ssh://${target}${port && port !== '22' ? ':' + port : ''}`;
+                    window.location.href = sshUrl;
+                    protocolSuccess = true;
+                } catch (e) {
+                    protocolSuccess = false;
+                }
+            }
+
+            // 方案2: 如果协议唤起失败，显示详细的命令和复制选项
+            setTimeout(() => {
+                // 创建一个友好的提示框
+                const message = isWindows 
+                    ? `Windows 环境配置：
+
+📋 SSH命令：
+${sshCmd}
+
+🎯 多种唤起方式：
+
+1️⃣ PowerShell直接执行（推荐）：
+   打开PowerShell，粘贴命令并回车
+
+2️⃣ Windows Terminal：
+   打开Windows Terminal，粘贴命令
+
+3️⃣ CMD命令提示符：
+   打开CMD，粘贴命令（需已安装OpenSSH）
+
+💡 提示：
+   • 如果系统未安装SSH客户端，请先安装OpenSSH
+   • 或者使用PuTTY等第三方SSH工具
+   • 命令已自动复制到剪贴板`
+                    
+                    : `macOS/Linux 环境配置：
+
+📋 SSH命令：
+${sshCmd}
+
+🎯 唤起方式：
+
+1️⃣ 终端直接执行：
+   打开终端，粘贴命令并回车
+
+2️⃣ 新终端窗口：
+   命令已复制，可在新窗口中使用
+
+💡 提示：
+   • 系统通常已内置SSH客户端
+   • 如提示权限问题，请检查密钥文件权限
+   • 命令已自动复制到剪贴板`;
+
+                // 显示详细指导
+                alert(message);
+                
+                // 自动复制命令到剪贴板
+                navigator.clipboard.writeText(sshCmd).then(() => {
+                    // 复制成功，可以添加视觉反馈
+                    const btn = document.querySelector('button[onclick="openLocalApp()"]');
+                    if (btn) {
+                        const originalText = btn.innerHTML;
+                        btn.innerHTML = '<i class="fas fa-check"></i> 命令已复制';
+                        btn.classList.add('bg-green-700', 'border-green-500');
+                        setTimeout(() => {
+                            btn.innerHTML = originalText;
+                            btn.classList.remove('bg-green-700', 'border-green-500');
+                        }, 2000);
+                    }
+                }).catch(() => {
+                    // 复制失败，用户需要手动复制
+                    console.log('剪贴板复制失败，用户需要手动复制命令');
+                });
+
+            }, protocolSuccess ? 800 : 100); // 如果协议唤起成功，稍等片刻再显示提示
+        }
+
+        // --- 模拟终端逻辑 (Xterm.js) ---
+        let term;
+        let fitAddon;
+        let command = ''; 
+        
+        // 趣味回复库 - 扩展版
+        const jokeResponses = [
+            "命令未找到。或许你可以试试 'help'？",
+            "服务器正在思考人生... 请稍后 (开玩笑的，指令错误)。",
+            "权限被拒绝。你的 root 权限大概是假的。",
+            "rm -rf / ? 这种危险的想法请收起来。",
+            "这里是网页模拟器，不是真的 Linux，别太认真。",
+            "Beep boop. I am a robot.",
+            "404 技能未找到。",
+            "这个命令太危险了，我拒绝执行！",
+            "你是不是想黑进NASA？🤔",
+            "我是模拟终端，不是魔法石...",
+            "sudo make me a sandwich？不行哦！",
+            "Segmentation fault (core dumped) - 这是我假装的",
+            "Kernel panic - 这只是个玩笑",
+            "你输入的命令太长了，我记不住...",
+            "42 - 生命、宇宙以及一切的答案",
+            "Error: 碳基生物检测失败 😂",
+            "Permission denied by 你的键盘",
+            "Command not found in this universe",
+            "你击碎了我的CPU...开玩笑的",
+            "System.out.println(\"Hello World!\") - 哎呀，串台了"
+        ];
+
+        // 全屏特效画布
+        let canvas, ctx;
+        let animationId;
+        
+        // 彩蛋状态
+        let easterEggActive = false;
+        let currentEffect = null;
+
+        function openWebTerm() {
+            const modal = document.getElementById('termModal');
+            modal.classList.remove('hidden');
+            
+            // 延迟初始化以确保 DOM 尺寸正确
+            if (!term) {
+                term = new Terminal({
+                    cursorBlink: true,
+                    theme: {
+                        background: '#1a1b26',
+                        foreground: '#a9b1d6',
+                        cursor: '#f7768e',
+                        selection: '#364a82',
+                        black: '#32344a',
+                        red: '#f7768e',
+                        green: '#9ece6a',
+                        yellow: '#e0af68',
+                        blue: '#7aa2f7',
+                        magenta: '#ad8ee6',
+                        cyan: '#449dab',
+                        white: '#787c99',
+                    },
+                    fontFamily: '"JetBrains Mono", "Consolas", monospace',
+                    fontSize: 14,
+                    allowTransparency: true
+                });
+                fitAddon = new FitAddon.FitAddon();
+                term.loadAddon(fitAddon);
+                term.open(document.getElementById('terminal-container'));
+
+                // 键盘监听
+                term.onData(e => {
+                    switch (e) {
+                        case '\r': // Enter
+                            term.write('\r\n');
+                            handleCommand(command.trim());
+                            command = '';
+                            break;
+                        case '\u007F': // Backspace
+                            if (command.length > 0) {
+                                term.write('\b \b');
+                                command = command.substring(0, command.length - 1);
+                            }
+                            break;
+                        case '\u0003': // Ctrl+C
+                            term.write('^C\r\n');
+                            prompt();
+                            command = '';
+                            break;
+                        default: 
+                            if (e >= String.fromCharCode(0x20) && e <= String.fromCharCode(0x7e) || e >= '\u00a0') {
+                                command += e;
+                                term.write(e);
+                            }
+                    }
+                });
+            }
+            
+            fitAddon.fit();
+            window.onresize = () => fitAddon.fit();
+            
+            // 每次打开重置并运行开场动画
+            setTimeout(() => runSimulation(), 100);
+            
+            // 创建全屏特效画布
+            createCanvas();
+        }
+
+        function createCanvas() {
+            // 移除旧的画布（如果存在）
+            const oldCanvas = document.getElementById('effectCanvas');
+            if (oldCanvas) oldCanvas.remove();
+
+            // 创建新的全屏画布
+            canvas = document.createElement('canvas');
+            canvas.id = 'effectCanvas';
+            canvas.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                pointer-events: none;
+                z-index: 9999;
+                display: none;
+            `;
+            document.body.appendChild(canvas);
+            ctx = canvas.getContext('2d');
+            
+            // 设置画布大小
+            const resizeCanvas = () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            };
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+        }
+
+        // 黑客帝国代码雨效果
+        function matrixRain() {
+            if (!canvas || !ctx) return;
+            
+            canvas.style.display = 'block';
+            easterEggActive = true;
+            currentEffect = 'matrix';
+            updateEffectStatus();
+            
+            // 显示全屏停止按钮
+            const fullscreenBtn = document.getElementById('fullscreenStopBtn');
+            if (fullscreenBtn) {
+                fullscreenBtn.classList.remove('hidden');
+            }
+            
+            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{}|;:,.<>?/~`';
+            const fontSize = 14;
+            const columns = Math.floor(canvas.width / fontSize);
+            const drops = Array(columns).fill(1);
+            
+            function draw() {
+                if (!easterEggActive || currentEffect !== 'matrix') {
+                    canvas.style.display = 'none';
+                    // 隐藏全屏停止按钮
+                    if (fullscreenBtn) {
+                        fullscreenBtn.classList.add('hidden');
+                    }
+                    return;
+                }
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = '#0F0';
+                ctx.font = fontSize + 'px monospace';
+                
+                for (let i = 0; i < drops.length; i++) {
+                    const text = chars[Math.floor(Math.random() * chars.length)];
+                    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                    
+                    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                        drops[i] = 0;
+                    }
+                    drops[i]++;
+                }
+                
+                animationId = requestAnimationFrame(draw);
+            }
+            
+            draw();
+        }
+
+        // 爱心动画 - 修正为正确的心形
+        function heartAnimation() {
+            if (!canvas || !ctx) return;
+            
+            canvas.style.display = 'block';
+            easterEggActive = true;
+            currentEffect = 'heart';
+            updateEffectStatus();
+            
+            // 显示全屏停止按钮
+            const fullscreenBtn = document.getElementById('fullscreenStopBtn');
+            if (fullscreenBtn) {
+                fullscreenBtn.classList.remove('hidden');
+            }
+            
+            let hearts = [];
+            const colors = ['#ff69b4', '#ff1493', '#ff6b6b', '#ff9ff3', '#feca57'];
+            
+            // 正确的心形绘制函数
+            function drawHeart(x, y, size, color) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                
+                // 使用贝塞尔曲线绘制标准心形
+                ctx.moveTo(0, 0);
+                // 左半边
+                ctx.bezierCurveTo(-size/2, -size/2, -size, size/2, 0, size);
+                // 右半边
+                ctx.bezierCurveTo(size, size/2, size/2, -size/2, 0, 0);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+            
+            function draw() {
+                if (!easterEggActive || currentEffect !== 'heart') {
+                    canvas.style.display = 'none';
+                    // 隐藏全屏停止按钮
+                    if (fullscreenBtn) {
+                        fullscreenBtn.classList.add('hidden');
+                    }
+                    return;
+                }
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 添加新爱心
+                if (Math.random() > 0.95) {
+                    hearts.push({
+                        x: Math.random() * canvas.width,
+                        y: canvas.height + 20,
+                        size: Math.random() * 15 + 5,
+                        speed: Math.random() * 2 + 1,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        rotation: Math.random() * Math.PI * 2,
+                        scale: Math.random() * 0.5 + 0.8
+                    });
+                }
+                
+                // 绘制和更新爱心
+                hearts = hearts.filter(h => {
+                    h.y -= h.speed;
+                    h.rotation += 0.02;
+                    
+                    ctx.save();
+                    ctx.translate(h.x, h.y);
+                    ctx.rotate(h.rotation);
+                    ctx.scale(h.scale, h.scale);
+                    drawHeart(0, 0, h.size, h.color);
+                    ctx.restore();
+                    
+                    return h.y > -50;
+                });
+                
+                animationId = requestAnimationFrame(draw);
+            }
+            
+            draw();
+        }
+
+        // 烟花效果
+        function fireworks() {
+            if (!canvas || !ctx) return;
+            
+            canvas.style.display = 'block';
+            easterEggActive = true;
+            currentEffect = 'fireworks';
+            updateEffectStatus();
+            
+            // 显示全屏停止按钮
+            const fullscreenBtn = document.getElementById('fullscreenStopBtn');
+            if (fullscreenBtn) {
+                fullscreenBtn.classList.remove('hidden');
+            }
+            
+            let particles = [];
+            
+            class Particle {
+                constructor(x, y, color) {
+                    this.x = x;
+                    this.y = y;
+                    this.color = color;
+                    this.velocity = {
+                        x: (Math.random() - 0.5) * 8,
+                        y: (Math.random() - 0.5) * 8
+                    };
+                    this.alpha = 1;
+                    this.decay = Math.random() * 0.02 + 0.01;
+                }
+                
+                draw() {
+                    ctx.save();
+                    ctx.globalAlpha = this.alpha;
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+                
+                update() {
+                    this.x += this.velocity.x;
+                    this.y += this.velocity.y;
+                    this.velocity.y += 0.1; // 重力
+                    this.alpha -= this.decay;
+                    return this.alpha > 0;
+                }
+            }
+            
+            function createFirework(x, y) {
+                const colors = ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff', '#5f27cd'];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                
+                for (let i = 0; i < 50; i++) {
+                    particles.push(new Particle(x, y, color));
+                }
+            }
+            
+            function draw() {
+                if (!easterEggActive || currentEffect !== 'fireworks') {
+                    canvas.style.display = 'none';
+                    // 隐藏全屏停止按钮
+                    if (fullscreenBtn) {
+                        fullscreenBtn.classList.add('hidden');
+                    }
+                    return;
+                }
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // 随机创建烟花
+                if (Math.random() > 0.98) {
+                    createFirework(
+                        Math.random() * canvas.width,
+                        Math.random() * canvas.height * 0.7
+                    );
+                }
+                
+                // 更新和绘制粒子
+                particles = particles.filter(p => {
+                    const alive = p.update();
+                    if (alive) p.draw();
+                    return alive;
+                });
+                
+                animationId = requestAnimationFrame(draw);
+            }
+            
+            draw();
+        }
+
+        // 雪花效果
+        function snow() {
+            if (!canvas || !ctx) return;
+            
+            canvas.style.display = 'block';
+            easterEggActive = true;
+            currentEffect = 'snow';
+            updateEffectStatus();
+            
+            // 显示全屏停止按钮
+            const fullscreenBtn = document.getElementById('fullscreenStopBtn');
+            if (fullscreenBtn) {
+                fullscreenBtn.classList.remove('hidden');
+            }
+            
+            let flakes = [];
+            
+            class Flake {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height - canvas.height;
+                    this.size = Math.random() * 3 + 1;
+                    this.speed = Math.random() * 1 + 0.5;
+                    this.drift = Math.random() * 2 - 1;
+                }
+                
+                draw() {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                update() {
+                    this.y += this.speed;
+                    this.x += this.drift;
+                    
+                    if (this.y > canvas.height) {
+                        this.y = -10;
+                        this.x = Math.random() * canvas.width;
+                    }
+                }
+            }
+            
+            // 初始化雪花
+            for (let i = 0; i < 100; i++) {
+                flakes.push(new Flake());
+            }
+            
+            function draw() {
+                if (!easterEggActive || currentEffect !== 'snow') {
+                    canvas.style.display = 'none';
+                    // 隐藏全屏停止按钮
+                    if (fullscreenBtn) {
+                        fullscreenBtn.classList.add('hidden');
+                    }
+                    return;
+                }
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                flakes.forEach(flake => {
+                    flake.update();
+                    flake.draw();
+                });
+                
+                animationId = requestAnimationFrame(draw);
+            }
+            
+            draw();
+        }
+
+        // 停止所有特效
+        function stopEffects() {
+            easterEggActive = false;
+            currentEffect = null;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            if (canvas) {
+                canvas.style.display = 'none';
+            }
+            
+            // 隐藏全屏停止按钮
+            const fullscreenBtn = document.getElementById('fullscreenStopBtn');
+            if (fullscreenBtn) {
+                fullscreenBtn.classList.add('hidden');
+            }
+            
+            // 更新状态显示
+            updateEffectStatus();
+            
+            // 在终端中显示停止信息（如果终端打开）
+            if (term && !document.getElementById('termModal').classList.contains('hidden')) {
+                term.writeln('\x1b[31m⏹️ 所有特效已停止\x1b[0m');
+                prompt();
+            }
+        }
+
+        // 更新特效状态显示
+        function updateEffectStatus() {
+            const statusEl = document.getElementById('effectStatus');
+            if (!statusEl) return;
+            
+            if (currentEffect) {
+                const effectNames = {
+                    'matrix': '代码雨',
+                    'heart': '爱心风暴',
+                    'fireworks': '烟花庆典',
+                    'snow': '浪漫雪花'
+                };
+                statusEl.textContent = `当前状态: ${effectNames[currentEffect] || currentEffect}`;
+                statusEl.className = 'text-xs text-red-400 font-mono font-bold animate-pulse';
+            } else {
+                statusEl.textContent = '当前状态: 无特效';
+                statusEl.className = 'text-xs text-gray-600 font-mono';
+            }
+        }
+
+        // 快捷键支持：Ctrl+Shift+S 停止特效
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+Shift+S (Windows/Linux) 或 Cmd+Shift+S (Mac)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                stopEffects();
+            }
+        });
+
+        function closeWebTerm() {
+            document.getElementById('termModal').classList.add('hidden');
+        }
+
+        function prompt() {
+            term.write('\r\n\x1b[32mroot@production-server\x1b[0m:\x1b[34m~\x1b[0m# ');
+        }
+
+        function handleCommand(cmd) {
+            if (!cmd) {
+                prompt();
+                return;
+            }
+
+            const args = cmd.split(' ');
+            const mainCmd = args[0].toLowerCase();
+
+            // 彩蛋命令检测
+            switch (mainCmd) {
+                // 专属彩蛋：M__H 留言
+                case '1115':
+                case 'mh':
+                case 'm__h':
+                    term.writeln('\x1b[32m✨ 彩蛋已触发：开发者留言\x1b[0m');
+                    const mhMsg = "本人闲来无事和ai聊天发现自己还不会使用ssh，所以爆肝俩小时搓出来这个工具网页自己使用，也欢迎大家嘿嘿！！-- ^M_-_H^";
+                    term.write('\x1b[35m'); // 使用紫色高亮文字
+                    typeWriter(mhMsg).then(() => {
+                        term.write('\x1b[0m');
+                        prompt();
+                    });
+                    return; // 阻止立即显示 prompt
+                
+                // 黑客帝国代码雨
+                case 'matrix':
+                case '代码雨':
+                case '黑客帝国':
+                    term.writeln('\x1b[32m🌧️ 彩蛋已触发：黑客帝国代码雨！\x1b[0m');
+                    term.writeln('\x1b[36m绿色代码雨即将降临...\x1b[0m');
+                    setTimeout(() => matrixRain(), 500);
+                    break;
+                
+                // 爱心动画
+                case 'love':
+                case '爱心':
+                case 'loveu':
+                    term.writeln('\x1b[35m❤️ 彩蛋已触发：爱心风暴！\x1b[0m');
+                    term.writeln('\x1b[35m浪漫时刻即将开始...\x1b[0m');
+                    setTimeout(() => heartAnimation(), 500);
+                    break;
+                
+                // 烟花特效
+                case 'fireworks':
+                case '烟花':
+                case '庆祝':
+                    term.writeln('\x1b[33m🎆 彩蛋已触发：烟花庆典！\x1b[0m');
+                    term.writeln('\x1b[33m夜空即将绽放绚丽色彩...\x1b[0m');
+                    setTimeout(() => fireworks(), 500);
+                    break;
+                
+                // 雪花特效
+                case 'snow':
+                case '雪花':
+                case '冬天':
+                    term.writeln('\x1b[37m❄️ 彩蛋已触发：浪漫雪花！\x1b[0m');
+                    term.writeln('\x1b[37m冬日浪漫即将开始...\x1b[0m');
+                    setTimeout(() => snow(), 500);
+                    break;
+                
+                // 停止特效
+                case 'stop':
+                case '停止':
+                case 'exit':
+                    term.writeln('\x1b[31m⏹️ 停止所有特效...\x1b[0m');
+                    stopEffects();
+                    break;
+                
+                // 帮助命令
+                case 'help':
+                    term.writeln('可用命令 (Simulation): \x1b[33mls, ll, pwd, whoami, date, clear, exit\x1b[0m');
+                    term.writeln('');
+                    term.writeln('\x1b[32m🌟 彩蛋命令 (隐藏惊喜): \x1b[0m');
+                    term.writeln('  \x1b[36m1115\x1b[0m       - M__H 留言');
+                    term.writeln('  \x1b[36mmatrix\x1b[0m     - 黑客帝国代码雨');
+                    term.writeln('  \x1b[36mlove\x1b[0m       - 爱心风暴');
+                    term.writeln('  \x1b[36mfireworks\x1b[0m  - 烟花庆典');
+                    term.writeln('  \x1b[36msnow\x1b[0m       - 浪漫雪花');
+                    term.writeln('  \x1b[36mstop\x1b[0m       - 停止所有特效');
+                    break;
+                
+                // 系统命令
+                case 'ls':
+                    term.writeln('\x1b[34mDocuments\x1b[0m  \x1b[34mDownloads\x1b[0m  \x1b[32mdeploy.sh\x1b[0m  \x1b[36mdocker-compose.yml\x1b[0m  \x1b[31mimportant_key.pem\x1b[0m');
+                    break;
+                case 'll':
+                    term.writeln('drwxr-xr-x 2 root root 4096 Dec 14 10:00 Documents');
+                    term.writeln('drwxr-xr-x 2 root root 4096 Dec 14 10:00 Downloads');
+                    term.writeln('-rwxr-xr-x 1 root root  128 Dec 14 10:01 deploy.sh');
+                    term.writeln('-rw-r--r-- 1 root root  520 Dec 14 10:02 docker-compose.yml');
+                    break;
+                case 'pwd':
+                    term.writeln('/root');
+                    break;
+                case 'whoami':
+                    term.writeln('root (simulation)');
+                    break;
+                case 'date':
+                    term.writeln(new Date().toString());
+                    break;
+                case 'clear':
+                    term.clear();
+                    setTimeout(prompt, 0); 
+                    return;
+                case 'exit':
+                    term.writeln('logout');
+                    setTimeout(closeWebTerm, 600);
+                    return;
+                case 'sudo':
+                    term.writeln('sudo: you are already root.');
+                    break;
+                default:
+                    // 检查是否是彩蛋命令的变体
+                    if (mainCmd.includes('1115') || mainCmd.includes('m__h') || mainCmd.includes('mh')) {
+                        term.writeln('\x1b[32m✨ 检测到彩蛋关键词！\x1b[0m');
+                        const mhMsg = "本人闲来无事和ai聊天发现自己还不会使用ssh，所以爆肝俩小时搓出来这个工具网页自己使用，也欢迎大家嘿嘿！！-- ^M_-_H^";
+                        term.write('\x1b[35m');
+                        typeWriter(mhMsg).then(() => {
+                            term.write('\x1b[0m');
+                            prompt();
+                        });
+                        return; // 阻止立即显示 prompt
+                    } else if (mainCmd.includes('matrix') || mainCmd.includes('代码') || mainCmd.includes('黑客')) {
+                        term.writeln('\x1b[32m🌧️ 检测到代码雨关键词！\x1b[0m');
+                        setTimeout(() => matrixRain(), 500);
+                    } else if (mainCmd.includes('love') || mainCmd.includes('爱') || mainCmd.includes('心')) {
+                        term.writeln('\x1b[35m❤️ 检测到爱心关键词！\x1b[0m');
+                        setTimeout(() => heartAnimation(), 500);
+                    } else if (mainCmd.includes('fire') || mainCmd.includes('烟花') || mainCmd.includes('庆')) {
+                        term.writeln('\x1b[33m🎆 检测到烟花关键词！\x1b[0m');
+                        setTimeout(() => fireworks(), 500);
+                    } else if (mainCmd.includes('snow') || mainCmd.includes('雪') || mainCmd.includes('冬')) {
+                        term.writeln('\x1b[37m❄️ 检测到雪花关键词！\x1b[0m');
+                        setTimeout(() => snow(), 500);
+                    } else {
+                        const randomJoke = jokeResponses[Math.floor(Math.random() * jokeResponses.length)];
+                        term.writeln(`\x1b[31mbash: ${mainCmd}: ${randomJoke}\x1b[0m`);
+                    }
+            }
+            prompt();
+        }
+
+        async function runSimulation() {
+            term.reset();
+            const cmd = document.getElementById('cmdDisplay').textContent;
+            const host = document.getElementById('host').value || '192.168.1.100';
+            
+            // 系统启动信息
+            term.writeln('\x1b[38;5;214m[System] 正在初始化 SSH 模拟环境...\x1b[0m');
+            await sleep(300);
+            term.write('\x1b[32muser@local\x1b[0m:\x1b[34m~\x1b[0m$ ');
+            
+            // 模拟输入刚才生成的命令
+            await typeWriter(cmd);
+            term.write('\r\n');
+            await sleep(400);
+            
+            term.writeln(`OpenSSH_9.3p1, OpenSSL 3.1.1 30 May 2023`);
+            term.writeln(`debug1: 正在连接 ${host} 端口 22。`);
+            await sleep(600);
+            term.writeln('debug1: 连接已建立。');
+            term.writeln('debug1: 身份文件 /home/user/.ssh/id_rsa 类型 3');
+            term.writeln('使用 "publickey" 认证到主机。');
+            
+            await sleep(600);
+            term.writeln('\r\n\x1b[36m        _    _                   _ \x1b[0m');
+            term.writeln('\x1b[36m       | |  | |                  | |\x1b[0m');
+            term.writeln('\x1b[36m       | |__| | ___  ___| |_     | |\x1b[0m');
+            term.writeln('\x1b[36m       |  __  |/ _ \\/ __| __|    | |\x1b[0m');
+            term.writeln('\x1b[36m       | |  | | (_) \\__ \\ |_     |_|\x1b[0m');
+            term.writeln('\x1b[36m       |_|  |_|\\___/|___/\\__|    (_)\x1b[0m');
+            term.writeln('');
+            term.writeln('欢迎使用 Ubuntu 24.04 LTS (GNU/Linux 6.2.0-generic x86_64)');
+            term.writeln(`系统负载:    0.05, 0.01, 0.00`);
+            term.writeln(`IP 地址:     ${host}`);
+            term.writeln('');
+            prompt();
+        }
+
+        function typeWriter(text) {
+            return new Promise(resolve => {
+                let i = 0;
+                function step() {
+                    if (i < text.length) {
+                        term.write(text.charAt(i));
+                        i++;
+                        setTimeout(step, 30 + Math.random() * 30);
+                    } else {
+                        resolve();
+                    }
+                }
+                step();
+            });
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // 防抖机制
+        let debounceTimer;
+        function debounceUpdate() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(update, 300);
+        }
+
+        // 输入验证
+        function validateInput(input, type) {
+            const patterns = {
+                port: /^(\d{1,5})?$/,
+                ip: /^(\d{1,3}\.){3}\d{1,3}$/,
+                host: /^[\w\-.]+$/,
+                tunnel: /^(\d+:(localhost|[\w\-.]+):\d+)?$/,
+                key: /^[\w\~\/\-\.\s]*$/
+            };
+            
+            if (!input || !patterns[type]) return true;
+            return patterns[type].test(input);
+        }
+
+        // 显示验证信息
+        function validateAndShowInfo() {
+            const inputs = {
+                user: document.getElementById('user').value.trim(),
+                host: document.getElementById('host').value.trim(),
+                port: document.getElementById('port').value.trim(),
+                key: document.getElementById('key').value.trim(),
+                tunD: document.getElementById('tunD').value.trim(),
+                tunL: document.getElementById('tunL').value.trim(),
+                tunR: document.getElementById('tunR').value.trim(),
+                jump: document.getElementById('jumpHost').value.trim()
+            };
+
+            let errors = [];
+            let warnings = [];
+
+            // 验证端口
+            if (inputs.port && !validateInput(inputs.port, 'port')) {
+                errors.push("端口号必须是1-65535之间的数字");
+            } else if (inputs.port && (inputs.port < 1 || inputs.port > 65535)) {
+                errors.push("端口号必须在1-65535范围内");
+            }
+
+            // 验证主机/IP
+            if (inputs.host) {
+                if (!validateInput(inputs.host, 'ip') && !validateInput(inputs.host, 'host')) {
+                    errors.push("主机/IP格式不正确");
+                }
+            } else {
+                warnings.push("未指定主机/IP，将生成占位符命令");
+            }
+
+            // 验证隧道配置
+            ['tunD', 'tunL', 'tunR'].forEach(key => {
+                if (inputs[key] && !validateInput(inputs[key], 'tunnel')) {
+                    errors.push(`${key} 格式不正确，应为 端口:目标:端口`);
+                }
+            });
+
+            // 验证跳板机
+            if (inputs.jump && !inputs.jump.includes('@')) {
+                warnings.push("跳板机格式应为: 用户@IP:端口");
+            }
+
+            // 验证密钥路径
+            if (inputs.key && !validateInput(inputs.key, 'key')) {
+                warnings.push("密钥路径包含特殊字符，请确认路径正确");
+            }
+
+            // 显示结果
+            const analysisEl = document.getElementById('analysis');
+            let resultHTML = '';
+
+            if (errors.length > 0) {
+                resultHTML += `<div class="text-red-400 font-bold mb-2">❌ 验证错误:</div>`;
+                errors.forEach(err => {
+                    resultHTML += `<div class="text-red-300 text-xs mb-1">• ${err}</div>`;
+                });
+                resultHTML += `<hr class="border-gray-700 my-2">`;
+            }
+
+            if (warnings.length > 0) {
+                resultHTML += `<div class="text-yellow-400 font-bold mb-2">⚠️ 验证警告:</div>`;
+                warnings.forEach(warn => {
+                    resultHTML += `<div class="text-yellow-300 text-xs mb-1">• ${warn}</div>`;
+                });
+                resultHTML += `<hr class="border-gray-700 my-2">`;
+            }
+
+            if (errors.length === 0 && warnings.length === 0) {
+                resultHTML += `<div class="text-green-400 font-bold mb-2">✅ 配置验证通过</div>`;
+                resultHTML += `<div class="text-gray-300 text-xs">所有输入格式正确，可以生成SSH命令。</div>`;
+            }
+
+            // 添加当前配置摘要
+            resultHTML += `<div class="mt-3 text-gray-400 text-xs">`;
+            if (inputs.host) {
+                resultHTML += `<div>目标: ${inputs.user ? inputs.user + '@' : ''}${inputs.host}${inputs.port ? ':' + inputs.port : ''}</div>`;
+            }
+            if (inputs.tunD || inputs.tunL || inputs.tunR) {
+                resultHTML += `<div>隧道: ${[inputs.tunD, inputs.tunL, inputs.tunR].filter(Boolean).join(', ')}</div>`;
+            }
+            resultHTML += `</div>`;
+
+            analysisEl.innerHTML = resultHTML;
+
+            // 如果有错误，添加视觉反馈
+            if (errors.length > 0) {
+                ['host', 'port', 'tunD', 'tunL', 'tunR', 'jumpHost', 'key'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && el.value) {
+                        el.classList.add('border-red-500');
+                        setTimeout(() => el.classList.remove('border-red-500'), 2000);
+                    }
+                });
+            }
+        }
+
+        // 切换隧道管理面板的显示/隐藏
+        function toggleTunnelManagement() {
+            const content = document.getElementById('tunnelManagement');
+            const icon = document.getElementById('tunnelToggleIcon');
+            
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                icon.style.transform = 'rotate(180deg)';
+            } else {
+                content.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 延迟一小段时间确保所有CSS和DOM都已加载完成
+            setTimeout(() => {
+                document.body.classList.add('loaded');
+                // 再次调用update确保状态正确
+                update();
+            }, 100);
+        });
+
+        // 初始化运行一次以重置状态
+        update();
+
+    </script>
+</body>
+</html>
