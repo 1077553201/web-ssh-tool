@@ -70,3 +70,5 @@
 Made with ❤️ by [^M_-_H^]
 
 </div>
+
+iptables -I INPUT -p tcp --dport 47590 -j ACCEPT
